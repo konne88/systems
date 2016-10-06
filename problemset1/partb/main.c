@@ -49,13 +49,13 @@ void on_read(int fd, short ev, void *arg) {
         return;
     }
     client->file_name_offset += len;
-    printf("Read %d bytes of the filename.\n", len);
+    printf("Done receiving %d bytes of the filename.\n", len);
 
     char* loc = strchr(&client->file_name, '\n');
     if (loc != NULL) {
         /* we received \n and know that the filename is complete */ 
         *loc = '\0';
-        printf("Done reading filename: '%s'\n", &client->file_name);
+        printf("The filename is: '%s'\n", &client->file_name);
         event_del(&client->ev_read);
         event_add(&client->ev_write, NULL);
 
@@ -64,10 +64,9 @@ void on_read(int fd, short ev, void *arg) {
         if (f == NULL) {
             printf("Error opening file: %s\n", strerror(errno));
         } else {
-            client->file_data_size = fread(&client->file_data, MAX_FILE_DATA_SIZE, 1, f);
-            printf("Error reading file: %d\n", MAX_FILE_DATA_SIZE);
+            client->file_data_size = fread(&client->file_data, 1, MAX_FILE_DATA_SIZE, f);
+            printf("Done reading entire file with %d bytes from disk.\n", client->file_data_size);
             fclose(f);
-            printf("Done reading file of size %d.\n", client->file_data_size);
         }
     }
 }
@@ -91,7 +90,7 @@ void on_write(int fd, short ev, void *arg)
             err(1, "writei");
         }
     }
-    printf("Wrote %d bytes of the file.\n", len);
+    printf("Done sending %d bytes of the file.\n", len);
     
     client->file_data_offset += len;
     if (client->file_data_offset == client->file_data_size) {
@@ -99,6 +98,7 @@ void on_write(int fd, short ev, void *arg)
         event_del(&client->ev_write);
         close(fd);
         free(client);
+        printf("Done sending entire file.\n");
     }
 }
 
