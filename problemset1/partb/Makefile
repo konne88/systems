@@ -1,10 +1,10 @@
-CFLAGS = -Ilibevent -Ilibevent/include -Wall
+CFLAGS = -Ilibevent -Ilibevent/include
 LIBS   = libevent/.libs/libevent.a -lrt
 
 all: libevent 550server
 
 550server: main.c
-	$(CC) $(CFLAGS) -g -O2 -o 550server main.c $(LIBS)
+	gcc $(CFLAGS) -g -O2 -o 550server main.c $(LIBS)
 
 libevent:
 	tar -xvf libevent*.tar.gz
