@@ -4,13 +4,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-
-/* For inet_ntoa. */
 #include <arpa/inet.h>
-
-/* Required by event.h. */
 #include <sys/time.h>
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -18,38 +13,12 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <err.h>
-
-/* Easy sensible linked lists. */
-#include "queue.h"
-
-/* Libevent. */
 #include <event.h>
 
 /* Port to listen on. */
 #define SERVER_PORT 5555
 
-/* Length of each buffer in the buffer queue.  Also becomes the amount
- * of data we try to read per call to read(2). */
-#define BUFLEN 1024
-
-/**
- * In event based programming we need to queue up data to be written
- * until we are told by libevent that we can write.  This is a simple
- * queue of buffers to be written implemented by a TAILQ from queue.h.
- */
-struct bufferq {
-	/* The buffer. */
-	u_char *buf;
-
-	/* The length of buf. */
-	int len;
-
-	/* The offset into buf to start writing from. */
-	int offset;
-	
-	/* For the linked list structure. */
-	TAILQ_ENTRY(bufferq) entries;
-};
+#define FILE_NAME_SIZE 255
 
 /**
  * A struct for client specific data, also includes pointer to create
@@ -64,10 +33,11 @@ struct client {
 	struct event ev_read;
 	struct event ev_write;
 
-	/* This is the queue of data to be written to this client. As
-	 * we can't call write(2) until libevent tells us the socket
-	 * is ready for writing. */
-	TAILQ_HEAD(, bufferq) writeq;
+    char  file_name [FILE_NAME_SIZE + 1];
+    int   file_name_offset;
+    char* file_data;
+    int   file_data_size;
+    int   file_data_offset;
 };
 
 /**
@@ -96,52 +66,36 @@ void
 on_read(int fd, short ev, void *arg)
 {
 	struct client *client = (struct client *)arg;
-	struct bufferq *bufferq;
-	u_char *buf;
-	int len;
-	
-	/* Because we are event based and need to be told when we can
-	 * write, we have to malloc the read buffer and put it on the
-	 * clients write queue. */
-	buf = malloc(BUFLEN);
-	if (buf == NULL)
-		err(1, "malloc failed");
 
-	len = read(fd, buf, BUFLEN);
-	if (len == 0) {
+    printf("Reading input!\n");
+	
+	int len = read(fd, &client->file_name + client->file_name_offset, 
+                       FILE_NAME_SIZE - client->file_name_offset);
+	if (len <= 0) {
 		/* Client disconnected, remove the read event and the
 		 * free the client structure. */
-		printf("Client disconnected.\n");
-                close(fd);
-		event_del(&client->ev_read);
-		free(client);
-		return;
-	}
-	else if (len < 0) {
-		/* Some other error occurred, close the socket, remove
-		 * the event and free the client structure. */
 		printf("Socket failure, disconnecting client: %s",
-		    strerror(errno));
+        strerror(errno));
 		close(fd);
 		event_del(&client->ev_read);
 		free(client);
 		return;
 	}
+    client->file_name_offset += len;
+    
+    printf("Read %d\n", len);
+  
+    /* we received \n and know that the filename is complete */ 
+    if (strchr(&client->file_name, '\n') != NULL) {
+        printf("Done reading, read %s\n", &client->file_name);
 
-	/* We can't just write the buffer back as we need to be told
-	 * when we can write by libevent.  Put the buffer on the
-	 * client's write queue and schedule a write event. */
-	bufferq = calloc(1, sizeof(*bufferq));
-	if (bufferq == NULL)
-		err(1, "malloc faild");
-	bufferq->buf = buf;
-	bufferq->len = len;
-	bufferq->offset = 0;
-	TAILQ_INSERT_TAIL(&client->writeq, bufferq, entries);
-
-	/* Since we now have data that needs to be written back to the
-	 * client, add a write event. */
-	event_add(&client->ev_write, NULL);
+     	/* Since we now have data that needs to be written back to the
+     	 * client, add a write event. */
+		event_del(&client->ev_read);
+	    event_add(&client->ev_write, NULL);
+        client->file_data = &client->file_name;
+        client->file_data_size = FILE_NAME_SIZE;
+    }
 }
 
 /**
@@ -152,48 +106,34 @@ void
 on_write(int fd, short ev, void *arg)
 {
 	struct client *client = (struct client *)arg;
-	struct bufferq *bufferq;
-	int len;
-
-	/* Pull the first item off of the write queue. We probably
-	 * should never see an empty write queue, but make sure the
-	 * item returned is not NULL. */
-	bufferq = TAILQ_FIRST(&client->writeq);
-	if (bufferq == NULL)
-		return;
 
 	/* Write the buffer.  A portion of the buffer may have been
 	 * written in a previous write, so only write the remaining
 	 * bytes. */
-        len = bufferq->len - bufferq->offset;
-	len = write(fd, bufferq->buf + bufferq->offset,
-                    bufferq->len - bufferq->offset);
+	int len = write(fd, client->file_data + client->file_data_offset,
+                        client->file_data_size - client->file_data_offset);
 	if (len == -1) {
 		if (errno == EINTR || errno == EAGAIN) {
 			/* The write was interrupted by a signal or we
 			 * were not able to write any data to it,
 			 * reschedule and return. */
-			event_add(&client->ev_write, NULL);
 			return;
 		}
 		else {
 			/* Some other socket error occurred, exit. */
+			event_del(&client->ev_write);
 			err(1, "write");
 		}
 	}
-	else if ((bufferq->offset + len) < bufferq->len) {
-		/* Not all the data was written, update the offset and
-		 * reschedule the write event. */
-		bufferq->offset += len;
-		event_add(&client->ev_write, NULL);
-		return;
+	
+    client->file_data_offset += len;
+	if (client->file_data_offset == client->file_data_size) {
+		/* All the data was written */
+    	event_del(&client->ev_write);
+        // TODO: free memory
+    	// free(bufferq->buf);
+    	free(client);		    
 	}
-
-	/* The data was completely written, remove the buffer from the
-	 * write queue. */
-	TAILQ_REMOVE(&client->writeq, bufferq, entries);
-	free(bufferq->buf);
-	free(bufferq);
 }
 
 /**
@@ -229,8 +169,7 @@ on_accept(int fd, short ev, void *arg)
 	 * the clients socket becomes read ready.  We also make the
 	 * read event persistent so we don't have to re-add after each
 	 * read. */
-	event_set(&client->ev_read, client_fd, EV_READ|EV_PERSIST, on_read, 
-	    client);
+	event_set(&client->ev_read, client_fd, EV_READ|EV_PERSIST, on_read, client);
 
 	/* Setting up the event does not activate, add the event so it
 	 * becomes active. */
@@ -238,16 +177,13 @@ on_accept(int fd, short ev, void *arg)
 
 	/* Create the write event, but don't add it until we have
 	 * something to write. */
-	event_set(&client->ev_write, client_fd, EV_WRITE, on_write, client);
-
-	/* Initialize the clients write queue. */
-	TAILQ_INIT(&client->writeq);
+	event_set(&client->ev_write, client_fd, EV_WRITE|EV_PERSIST, on_write, client);
 
 	printf("Accepted connection from %s\n",
                inet_ntoa(client_addr.sin_addr));
 }
 
-int
+int 
 main(int argc, char **argv)
 {
 	int listen_fd;

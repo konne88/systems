@@ -3,7 +3,7 @@ LIBS   = libevent/.libs/libevent.a -lrt
 
 all: libevent 550server
 
-550server:
+550server: main.c
 	$(CC) $(CFLAGS) -g -O2 -o 550server main.c $(LIBS)
 
 libevent:
