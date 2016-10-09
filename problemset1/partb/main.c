@@ -1,5 +1,7 @@
 /* Inspired by:
  * https://github.com/jasonish/libevent-examples/blob/master/echo-server/libevent_echosrv2.c
+ * and
+ * https://sourceforge.net/p/libevent-thread/code/ci/master/tree/
  */
 #include <sys/types.h>
 #include <sys/socket.h>
