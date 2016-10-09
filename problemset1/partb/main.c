@@ -22,7 +22,11 @@
 
 struct client {
     struct event ev_read;
+    struct event ev_read_file;
     struct event ev_write;
+
+    int pipe_fd[2];
+    pthread_t thread;
 
     char  file_name [MAX_FILE_NAME_SIZE + 1];
     int   file_name_offset;
@@ -37,6 +41,30 @@ int setnonblock(int fd) {
     if (flags < 0) 
         return flags;
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+void* read_file_thread(void *arg) {
+    struct client *client = (struct client *)arg;
+
+    FILE* f = fopen(&client->file_name, "rb");
+
+    if (f == NULL) {
+        printf("Error opening file: %s\n", strerror(errno));
+    } else {
+        client->file_data_size = fread(&client->file_data, 1, MAX_FILE_DATA_SIZE, f);
+        printf("Done reading entire file with %d bytes from disk.\n", client->file_data_size);
+        fclose(f);
+    }
+
+    write(client->pipe_fd[1], "!", 1);
+    close(client->pipe_fd[1]);
+}
+
+void on_read_file(int fd, short ev, void *arg) {
+    struct client *client = (struct client *)arg;
+    
+    close(client->pipe_fd[0]);
+    event_add(&client->ev_write, NULL);
 }
 
 void on_read(int fd, short ev, void *arg) {
@@ -59,16 +87,15 @@ void on_read(int fd, short ev, void *arg) {
         *loc = '\0';
         printf("The filename is: '%s'\n", &client->file_name);
         event_del(&client->ev_read);
-        event_add(&client->ev_write, NULL);
 
-        FILE* f = fopen(&client->file_name, "rb");
+        pipe(&client->pipe_fd);
 
-        if (f == NULL) {
-            printf("Error opening file: %s\n", strerror(errno));
-        } else {
-            client->file_data_size = fread(&client->file_data, 1, MAX_FILE_DATA_SIZE, f);
-            printf("Done reading entire file with %d bytes from disk.\n", client->file_data_size);
-            fclose(f);
+        event_set(&client->ev_read_file, client->pipe_fd[0], EV_READ, on_read_file, client);
+        event_add(&client->ev_read_file, NULL);
+
+        if(pthread_create(&client->thread, NULL, read_file_thread, client)) {
+            fprintf(stderr, "Error creating thread\n");
+            return;
         }
     }
 }

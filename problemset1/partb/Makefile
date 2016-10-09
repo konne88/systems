@@ -4,7 +4,7 @@ LIBS   = libevent/.libs/libevent.a -lrt
 all: libevent 550server
 
 550server: main.c
-	gcc $(CFLAGS) -g -O2 -o 550server main.c $(LIBS)
+	gcc $(CFLAGS) -g -O2 -pthread -o 550server main.c $(LIBS)
 
 libevent:
 	tar -xvf libevent*.tar.gz
