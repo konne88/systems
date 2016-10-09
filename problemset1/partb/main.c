@@ -56,7 +56,6 @@ void* read_file_thread(void *arg) {
         fclose(f);
     }
 
-    write(client->pipe_fd[1], "!", 1);
     close(client->pipe_fd[1]);
 }
 
