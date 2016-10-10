@@ -154,7 +154,10 @@ void on_accept(int fd, short ev, void *arg)
 
 int main(int argc, char **argv)
 {
-    int port = 5555;
+    char* addr = argv[1];
+    int port = atoi(argv[2]);
+   
+    printf("starting server on %s:%d\n", addr, port); 
 
     event_init();
 
@@ -170,7 +173,7 @@ int main(int argc, char **argv)
     struct sockaddr_in listen_addr;
     memset(&listen_addr, 0, sizeof(listen_addr));
     listen_addr.sin_family = AF_INET;
-    listen_addr.sin_addr.s_addr = INADDR_ANY;
+    listen_addr.sin_addr.s_addr = inet_addr(addr); // INADDR_ANY;
     listen_addr.sin_port = htons(port);
     if (bind(listen_fd, (struct sockaddr *)&listen_addr,
         sizeof(listen_addr)) < 0)
