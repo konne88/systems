@@ -44,19 +44,19 @@ int main(int argc, char *argv[]) {
         // std::vector<pid_t> children;
         // std::vector<pipe_fd> pipes;
 
-        // for (size_t i = 0; i+1 < cmds.size(); ++i) {
+        // for (size_t i = 0; i+1 < execs.size(); ++i) {
         //   pipe_fd p;
         //   pipes.push_back(p);
         // }
 
-        // for (size_t i = 0; i < cmds.size(); ++i) {
+        // for (size_t i = 0; i < execs.size(); ++i) {
         //     pid_t pid = fork();
         //     if (pid == 0) {
         //         if (i != 0) {
         //         close(pipes[i-1].fd_out);
         //         dup2(pipes[i-1].fd_in, STDIN_FILENO);
         //     }
-        //     if (i + 1 != cmds.size()) {
+        //     if (i + 1 != execs.size()) {
         //         close(pipes[i].fd_in);
         //         dup2(pipes[i].fd_out, STDOUT_FILENO);        
         //     }        
