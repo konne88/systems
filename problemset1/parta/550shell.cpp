@@ -1,12 +1,17 @@
 #include <stdio.h>
 #include <string.h>
-#include <unidstd.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <iostream>
 #include <string>
 #include <vector>
 
-std::vector<std::vector<std::string>> parse_cmd(char *cmd) {
-    std::vector<std::vector<std::string>> result;
+struct pipe {
+    int pipe_fd[2];
+};
+
+void parse_cmd(char *cmd, std::vector<std::vector<std::string>> &result) {
     char *token, *arg;
 
     token = strtok(cmd, "|");
@@ -26,8 +31,6 @@ std::vector<std::vector<std::string>> parse_cmd(char *cmd) {
         }
         result.push_back(cmd_tokens);
     }
-
-    return result;
 }
 
 int main(int argc, char *argv[]) {
@@ -37,35 +40,44 @@ int main(int argc, char *argv[]) {
         input = new char[input_str.length()+1];
         strcpy(input, input_str.c_str());
 
-        std::vector<std::vector<std::string>> execs = parse_cmd(input);
+        std::vector<std::vector<std::string>> execs;
+        parse_cmd(input, execs);
         int n_execs = execs.size();
 
+        // create pipes
+        std::vector<struct pipe> pipes;
+        for (int i = 0; i < n_execs; i++) {
+            struct pipe p;
+            if (pipe(p.pipe_fd) == -1) {
+                perror("cannot create pipe");
+            }
+            pipes.push_back(p);
+        }
 
-        // std::vector<pid_t> children;
-        // std::vector<pipe_fd> pipes;
+        for (int i = 0; i < n_execs; i++) {
+            pid_t pid = fork();
+            if (pid == -1) {
+                perror("cannot fork");
+                exit(EXIT_FAILURE);
+            }
+            if (pid == 0) {
+                // handle file descriptors
 
-        // for (size_t i = 0; i+1 < execs.size(); ++i) {
-        //   pipe_fd p;
-        //   pipes.push_back(p);
-        // }
-
-        // for (size_t i = 0; i < execs.size(); ++i) {
-        //     pid_t pid = fork();
-        //     if (pid == 0) {
-        //         if (i != 0) {
-        //         close(pipes[i-1].fd_out);
-        //         dup2(pipes[i-1].fd_in, STDIN_FILENO);
-        //     }
-        //     if (i + 1 != execs.size()) {
-        //         close(pipes[i].fd_in);
-        //         dup2(pipes[i].fd_out, STDOUT_FILENO);        
-        //     }        
-        // }
-        
-        // for (size_t i = 0; i < children.size(); ++i) {
-        //     int status;
-        //     waitpid(children[i], &status, 0);
-        // }
+                // execute command
+                std::vector<char*> cmd;
+                int n_cmd = execs[i].size();
+                for (int j = 0; j < n_cmd; j++) {
+                    cmd.push_back(&execs[i][j][0]);
+                }
+                cmd.push_back(0);
+                if (execvp(cmd[0], &cmd[0]) == -1) {
+                    perror("execution error");
+                }
+            } else {
+                int status;
+                waitpid(pid, &status, 0);
+            }
+        }
 
         delete[] input;
     }
