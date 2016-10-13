@@ -7,6 +7,9 @@
 #include <string>
 #include <vector>
 
+#define STDIN_FD  0
+#define STDOUT_FD 1
+
 struct pipe {
     int pipe_fd[2];
 };
@@ -44,17 +47,15 @@ int main(int argc, char *argv[]) {
         parse_cmd(input, execs);
         int n_execs = execs.size();
 
-        // create pipes
-        std::vector<struct pipe> pipes;
+        struct pipe p;
+        int in_fd = STDIN_FD;
+
         for (int i = 0; i < n_execs; i++) {
-            struct pipe p;
+            // create pipe
             if (pipe(p.pipe_fd) == -1) {
                 perror("cannot create pipe");
             }
-            pipes.push_back(p);
-        }
-
-        for (int i = 0; i < n_execs; i++) {
+            // fork child process
             pid_t pid = fork();
             if (pid == -1) {
                 perror("cannot fork");
@@ -62,6 +63,14 @@ int main(int argc, char *argv[]) {
             }
             if (pid == 0) {
                 // handle file descriptors
+                close(p.pipe_fd[0]);
+                dup2(in_fd, STDIN_FD);
+                close(in_fd);
+
+                if (i < n_execs - 1) {
+                    dup2(p.pipe_fd[1], STDOUT_FD);
+                }
+                close(p.pipe_fd[1]);
 
                 // execute command
                 std::vector<char*> cmd;
@@ -74,6 +83,10 @@ int main(int argc, char *argv[]) {
                     perror("execution error");
                 }
             } else {
+                close(p.pipe_fd[1]);
+                if (in_fd != STDIN_FD)
+                    close(in_fd);
+                in_fd = p.pipe_fd[0];
                 int status;
                 waitpid(pid, &status, 0);
             }
